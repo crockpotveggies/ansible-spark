@@ -1,0 +1,92 @@
+# install oracle
+  - name: Install add-apt-repository
+    action: apt pkg=software-properties-common state=latest install_recommends=yes
+    sudo: yes
+
+  - name: Add Java repository to sources
+    action: apt_repository repo='ppa:webupd8team/java'
+    sudo: yes
+
+  - name: Autoaccept license for Java
+    action: shell echo oracle-java7-installer shared/accepted-oracle-license-v1-1 select true | sudo /usr/bin/debconf-set-selections
+    sudo: yes
+
+  - name: Update APT package cache
+    action: apt update_cache=yes
+    sudo: yes
+
+  - name: Install Java 7
+    action: apt pkg=oracle-java7-installer state=latest install_recommends=yes
+    sudo: yes
+
+  - name: Set Java 7 Env
+    action: apt pkg=oracle-java7-set-default state=latest install_recommends=yes
+    sudo: yes
+
+# Spark stuff  
+  - action: stat path=/home/ubuntu/spark-1.6.1-bin-hadoop2.6.tgz 
+    register: spark_downloaded
+
+  - name: download spark
+    register: spark_downloaded
+    when: spark_downloaded.stat.exists == False
+    get_url:
+      url=http://d3kbcqa49mib13.cloudfront.net/spark-1.6.1-bin-hadoop2.6.tgz 
+      dest=/home/ubuntu/
+
+  - action: stat path=/home/ubuntu/spark
+    register: spark_unzipped
+
+  - name: unzip spark
+    register: result
+    when: spark_unzipped.stat.exists == False
+    unarchive: 
+      copy=no
+      src=/home/ubuntu/spark-1.6.1-bin-hadoop2.6.tgz 
+      owner=ubuntu
+      dest=/home/ubuntu/
+
+  - name: Move spark to simple folder
+    when: spark_unzipped.stat.exists == False
+    command: mv /home/ubuntu/spark-1.6.1-bin-hadoop2.6 /home/ubuntu/spark
+
+  - name: deploy slaves configuration
+    template: src=templates/slaves.j2 dest=/home/ubuntu/spark/conf/slaves
+
+  - name: deploy spark-env.sh configuration
+    template: src=templates/spark-env.sh.j2 dest=/home/ubuntu/spark/conf/spark-env.sh
+
+# update hosts
+  - name: Checking /etc/hosts is patched
+    shell: grep "ANSIBLE_ROLE_X_APPLIED" /etc/hosts
+    ignore_errors: yes
+    register: grep_role_x_applied
+
+  - name: Patch /etc/hosts with slaves
+    lineinfile: dest=/etc/hosts line='{{ item }}'
+    sudo: yes
+    when: grep_role_x_applied.stdout == ""
+    with_items:
+      - '; ANSIBLE_ROLE_X_APPLIED'
+      - '10.0.0.4 master.cluster'
+      - '10.0.0.2 slave1.cluster'
+      - '10.0.0.5 slave2.cluster'
+      - '10.0.0.6 slave3.cluster'
+      - '10.0.0.7 slave4.cluster'
+      - '10.0.0.9 slave5.cluster'
+      - '10.0.0.10 slave6.cluster'
+      - '10.0.0.11 slave7.cluster'
+
+# start up spark
+  - name: stop spark master (if running)
+    command: /home/ubuntu/spark/sbin/stop-master.sh
+
+  - name: start spark master
+    shell: SPARK_MASTER_IP="master.cluster" /home/ubuntu/spark/sbin/start-master.sh
+
+  - name: stop the slaves (if running)
+    shell: /home/ubuntu/spark/sbin/stop-slaves.sh
+
+  - name: start the slaves
+    shell: /home/ubuntu/spark/sbin/start-slaves.sh
+

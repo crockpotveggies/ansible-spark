@@ -1,0 +1,8 @@
+---
+- hosts: all
+
+  roles:
+    - { role: "spark" }
+
+  environment:
+    SPARK_HOME: /home/ubuntu/spark
